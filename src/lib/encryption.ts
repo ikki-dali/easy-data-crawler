@@ -63,6 +63,8 @@ export interface EncryptedCredentials {
   expiresAt?: number;
   tokenType?: string;
   scope?: string;
+  accountId?: string;
+  accountName?: string;
 }
 
 export function encryptCredentials(credentials: EncryptedCredentials): string {

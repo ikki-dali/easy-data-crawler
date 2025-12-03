@@ -146,7 +146,7 @@ export async function fetchMetaAdsData(
     try {
       // 必要なフィールドのみ（日付、キャンペーン名 + 選択したメトリクス）
       const baseFields = ['date_start', 'campaign_name'];
-      const allFields = [...new Set([...baseFields, ...fields])];
+      const allFields = Array.from(new Set([...baseFields, ...fields]));
       
       const params = new URLSearchParams({
         fields: allFields.join(','),

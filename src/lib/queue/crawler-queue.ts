@@ -9,7 +9,10 @@ export interface CrawlerJobData {
   accountIds: string[];
   reportConfig: {
     dateRangeType: string;
+    dateRangeStart?: string;
+    dateRangeEnd?: string;
     lookbackDays?: number;
+    lookbackMonths?: number;
     dimensions: string[];
     metrics: string[];
     excludeZeroCost: boolean;
