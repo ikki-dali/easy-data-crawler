@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthSessionProvider } from "@/components/providers/session-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "カンタンデータクローラー",
@@ -17,7 +18,10 @@ export default function RootLayout({
     <html lang="ja">
       <body className="antialiased">
         <AuthSessionProvider>
-          <QueryProvider>{children}</QueryProvider>
+          <QueryProvider>
+            {children}
+            <Toaster />
+          </QueryProvider>
         </AuthSessionProvider>
       </body>
     </html>
