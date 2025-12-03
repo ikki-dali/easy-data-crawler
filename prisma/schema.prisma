@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== ユーザー関連 =====
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  name            String?
+  emailVerified   DateTime?
+  image           String?
+  password        String?          // メール認証用（ハッシュ化）
+  subscriptionType SubscriptionType @default(FREE)
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  // リレーション
+  accounts        Account[]
+  sessions        Session[]
+  platformAuths   PlatformAuthentication[]
+  crawlers        Crawler[]
+}
+
+enum SubscriptionType {
+  FREE
+  STARTER
+  ESSENTIAL
+  PRO
+  ENTERPRISE
+}
+
+// NextAuth用 - OAuth アカウント
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// NextAuth用 - セッション
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+// NextAuth用 - メール認証トークン
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// プラットフォーム認証情報
+model PlatformAuthentication {
+  id                   String   @id @default(cuid())
+  userId               String
+  platform             Platform
+  accountIdentifier    String?  // メール、アカウントID等
+  encryptedCredentials String   @db.Text // 暗号化されたJSON
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, platform, accountIdentifier])
+  @@index([userId])
+}
+
+enum Platform {
+  GOOGLE_ADS
+  GOOGLE_ANALYTICS
+  META_ADS
+  TIKTOK_ADS
+  LINE_ADS
+  LINE_ADS_SYNC
+  YAHOO_SEARCH
+  YAHOO_DISPLAY
+  SMARTNEWS_ADS
+  SMARTNEWS_ADS_V2
+  MICROSOFT_ADS
+  X_ADS
+  FACEBOOK_PAGE_INSIGHTS
+  INSTAGRAM_INSIGHTS
+  AMAZON_SELLER
+  AD_EBIS
+  GOOGLE_SHEETS
+}
+
+// ===== クローラー関連 =====
+
+model Crawler {
+  id              String        @id @default(cuid())
+  userId          String
+  name            String
+  platform        Platform
+  status          CrawlerStatus @default(INACTIVE)
+  
+  // スプレッドシート設定
+  spreadsheetUrl  String
+  spreadsheetId   String
+  sheetName       String
+  
+  // データソース設定
+  accountIds      String[]      // 広告アカウントID配列
+  
+  // レポート設定（JSON）
+  reportConfig    Json          // ReportConfig
+  
+  // スケジュール設定（JSON）
+  scheduleConfig  Json          // ScheduleConfig
+  
+  // タグ
+  tags            String[]
+  
+  // タイムスタンプ
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastExecutedAt  DateTime?
+  
+  // リレーション
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobExecutions   JobExecution[]
+  
+  @@index([userId])
+  @@index([status])
+  @@index([platform])
+}
+
+enum CrawlerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// ジョブ実行履歴
+model JobExecution {
+  id            String       @id @default(cuid())
+  crawlerId     String
+  status        JobStatus
+  
+  scheduledAt   DateTime
+  startedAt     DateTime?
+  completedAt   DateTime?
+  
+  errorMessage  String?      @db.Text
+  retryCount    Int          @default(0)
+  
+  // 実行結果メタデータ（行数など）
+  metadata      Json?
+  
+  createdAt     DateTime     @default(now())
+  
+  // リレーション
+  crawler       Crawler      @relation(fields: [crawlerId], references: [id], onDelete: Cascade)
+  
+  @@index([crawlerId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
