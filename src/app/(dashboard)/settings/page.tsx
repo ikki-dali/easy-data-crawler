@@ -16,14 +16,28 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { CheckCircle2, Circle, ExternalLink, Trash2 } from 'lucide-react';
+import { CheckCircle2, Circle, ExternalLink, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
+interface AccountDetail {
+  id: string;
+  accountIdentifier: string | null;
+  accountName: string;
+  connectedAt: string;
+  updatedAt: string;
+}
+
 interface AccountInfo {
   id: string;
   accountIdentifier: string | null;
+  displayName?: string;
+  userName?: string | null;
+  userEmail?: string | null;
+  accountCount?: number; // グループ化されたアカウント数
+  accountIds?: string[]; // すべてのアカウントID
+  accountDetails?: AccountDetail[]; // グループ内の各アカウントの詳細情報
   connectedAt: string;
   updatedAt: string;
 }
@@ -56,7 +70,8 @@ const statusUrls: Record<string, string> = {
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
-  const [disconnectTarget, setDisconnectTarget] = useState<{ platform: string; accountId: string; accountName: string } | null>(null);
+  const [disconnectTarget, setDisconnectTarget] = useState<{ platform: string; accountId: string; accountName: string; accountIds?: string[] } | null>(null);
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery<{ platforms: PlatformStatus[] }>({
     queryKey: ['platform-settings'],
@@ -68,12 +83,25 @@ export default function SettingsPage() {
   });
 
   const disconnectMutation = useMutation({
-    mutationFn: async ({ accountId }: { accountId: string }) => {
-      const res = await fetch(`/api/settings/platforms/accounts/${accountId}`, { 
-        method: 'DELETE' 
-      });
-      if (!res.ok) throw new Error('Failed to disconnect');
-      return res.json();
+    mutationFn: async ({ accountId, accountIds }: { accountId: string; accountIds?: string[] }) => {
+      // グループ化されたアカウントの場合は、すべてのアカウントIDを削除
+      const idsToDelete = accountIds && accountIds.length > 0 ? accountIds : [accountId];
+      
+      // すべてのアカウントを削除
+      const deletePromises = idsToDelete.map(id => 
+        fetch(`/api/settings/platforms/accounts/${id}`, { 
+          method: 'DELETE' 
+        })
+      );
+      
+      const results = await Promise.all(deletePromises);
+      const failed = results.find(res => !res.ok);
+      
+      if (failed) {
+        throw new Error('Failed to disconnect');
+      }
+      
+      return { success: true };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['platform-settings'] });
@@ -155,39 +183,106 @@ export default function SettingsPage() {
                         </p>
                         {platform.authenticated && platform.accounts.length > 0 && (
                           <div className="mt-2 space-y-1">
-                            {platform.accounts.map((account) => (
-                              <div
-                                key={account.id}
-                                className="flex items-center justify-between p-2 bg-muted rounded text-xs"
-                              >
-                                <div>
-                                  <span className="font-medium">
-                                    {account.accountIdentifier || 'アカウント'}
-                                  </span>
-                                  <span className="text-muted-foreground ml-2">
-                                    {formatDistanceToNow(new Date(account.connectedAt), {
-                                      addSuffix: true,
-                                      locale: ja,
-                                    })}
-                                    に連携
-                                  </span>
+                            {platform.accounts.map((account) => {
+                              // 表示テキストを決定（ユーザー名とメールアドレスのみ）
+                              let displayText = account.displayName || account.accountIdentifier || 'アカウント';
+                              if (account.userName && account.userEmail) {
+                                displayText = `${account.userName} - ${account.userEmail}`;
+                              } else if (account.userName) {
+                                displayText = account.userName;
+                              } else if (account.userEmail) {
+                                displayText = account.userEmail;
+                              }
+                              
+                              const isExpanded = expandedAccounts.has(account.id);
+                              const hasMultipleAccounts = account.accountCount && account.accountCount > 1;
+                              
+                              return (
+                                <div key={account.id} className="border rounded text-xs">
+                                  {/* メイン行 */}
+                                  <div className="flex items-center justify-between p-1.5 hover:bg-muted/50">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      {hasMultipleAccounts && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-5 w-5 p-0"
+                                          onClick={() => {
+                                            const newExpanded = new Set(expandedAccounts);
+                                            if (isExpanded) {
+                                              newExpanded.delete(account.id);
+                                            } else {
+                                              newExpanded.add(account.id);
+                                            }
+                                            setExpandedAccounts(newExpanded);
+                                          }}
+                                        >
+                                          {isExpanded ? (
+                                            <ChevronUp className="h-3 w-3" />
+                                          ) : (
+                                            <ChevronDown className="h-3 w-3" />
+                                          )}
+                                        </Button>
+                                      )}
+                                      <span className="font-medium truncate text-xs">
+                                        {displayText}
+                                      </span>
+                                      {hasMultipleAccounts && (
+                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                                          {account.accountCount}
+                                        </Badge>
+                                      )}
+                                      <span className="text-muted-foreground text-[10px]">
+                                        {formatDistanceToNow(new Date(account.connectedAt), {
+                                          addSuffix: true,
+                                          locale: ja,
+                                        })}
+                                      </span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-5 w-5 p-0 flex-shrink-0"
+                                      onClick={() =>
+                                        setDisconnectTarget({
+                                          platform: platform.platform,
+                                          accountId: account.id,
+                                          accountName: displayText,
+                                          accountIds: account.accountIds,
+                                        })
+                                      }
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                  
+                                  {/* 展開されたアカウント詳細 */}
+                                  {isExpanded && account.accountDetails && account.accountDetails.length > 0 && (
+                                    <div className="border-t bg-background/50 pl-6 pr-2 py-1 space-y-0.5">
+                                      {account.accountDetails.map((detail) => (
+                                        <div
+                                          key={detail.id}
+                                          className="flex items-center justify-between py-0.5 text-[10px]"
+                                        >
+                                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <span className="truncate">{detail.accountName}</span>
+                                            <span className="text-muted-foreground">
+                                              {detail.accountIdentifier}
+                                            </span>
+                                          </div>
+                                          <span className="text-muted-foreground text-[9px]">
+                                            {formatDistanceToNow(new Date(detail.connectedAt), {
+                                              addSuffix: true,
+                                              locale: ja,
+                                            })}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 px-2"
-                                  onClick={() =>
-                                    setDisconnectTarget({
-                                      platform: platform.platform,
-                                      accountId: account.id,
-                                      accountName: account.accountIdentifier || 'アカウント',
-                                    })
-                                  }
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -228,7 +323,10 @@ export default function SettingsPage() {
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
-                disconnectTarget && disconnectMutation.mutate({ accountId: disconnectTarget.accountId })
+                disconnectTarget && disconnectMutation.mutate({ 
+                  accountId: disconnectTarget.accountId,
+                  accountIds: disconnectTarget.accountIds
+                })
               }
               className="bg-red-600 hover:bg-red-700"
             >

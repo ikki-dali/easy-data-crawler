@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db/prisma';
 import { decryptCredentials } from '@/lib/encryption';
-import { getMetaAdAccounts } from '@/lib/meta/client';
+import { getMetaAdAccounts, getMetaUserInfo } from '@/lib/meta/client';
 
 export async function GET() {
   try {
@@ -36,6 +36,7 @@ export async function GET() {
       name: string;
       currency?: string;
       email?: string;
+      userName?: string;
       accountIdentifier?: string;
     }> = [];
 
@@ -48,20 +49,36 @@ export async function GET() {
           continue; // 期限切れのトークンはスキップ
         }
 
+        // ユーザー情報を取得（credentialsに保存されていない場合はAPIから取得）
+        let userEmail = credentials.userEmail;
+        let userName = credentials.userName;
+        
+        // credentialsにユーザー情報がない場合は、APIから取得を試みる
+        if (!userEmail || !userName) {
+          try {
+            const userInfo = await getMetaUserInfo(credentials.accessToken);
+            userEmail = userInfo.email || userEmail;
+            userName = userInfo.name || userName;
+          } catch (userInfoError) {
+            // ユーザー情報の取得に失敗しても続行
+            console.warn(`Failed to get user info for auth ${auth.id}:`, userInfoError);
+          }
+        }
+
         // この認証情報に紐づく広告アカウントを取得
         const metaAccounts = await getMetaAdAccounts(credentials.accessToken);
         
         for (const account of metaAccounts) {
           // アカウント名とIDから表示名を生成
           const displayName = account.name || account.accountId;
-          const email = credentials.accountName || auth.accountIdentifier || undefined;
           
           allAccounts.push({
             id: account.accountId,
             name: displayName,
             currency: account.currency,
-            email: email,
+            email: userEmail, // ユーザーのメールアドレス
             accountIdentifier: auth.accountIdentifier || undefined,
+            userName: userName, // ユーザー名
           });
         }
       } catch (apiError) {
@@ -82,7 +99,40 @@ export async function GET() {
       new Map(allAccounts.map(acc => [acc.id, acc])).values()
     );
 
-    return NextResponse.json({ accounts: uniqueAccounts });
+    // ユーザー単位でグループ化
+    const userGroups = new Map<string, typeof uniqueAccounts>();
+    for (const account of uniqueAccounts) {
+      // ユーザー識別子を作成（userName + email）
+      const userKey = account.userName && account.email 
+        ? `${account.userName}|||${account.email}`
+        : account.email || account.userName || 'unknown';
+      
+      if (!userGroups.has(userKey)) {
+        userGroups.set(userKey, []);
+      }
+      userGroups.get(userKey)!.push(account);
+    }
+
+    // ユーザーグループごとにデータを整形
+    const groupedAccounts = Array.from(userGroups.entries()).map(([userKey, accounts]) => {
+      const firstAccount = accounts[0];
+      return {
+        userId: userKey, // ユーザー識別子
+        userName: firstAccount.userName || '',
+        email: firstAccount.email || '',
+        accounts: accounts.map(acc => ({
+          id: acc.id,
+          name: acc.name,
+          currency: acc.currency,
+          accountIdentifier: acc.accountIdentifier,
+        })),
+      };
+    });
+
+    return NextResponse.json({ 
+      accounts: uniqueAccounts, // 後方互換性のため残す
+      groupedAccounts, // ユーザー単位でグループ化したデータ
+    });
   } catch (error) {
     console.error('Meta accounts error:', error);
     return NextResponse.json(

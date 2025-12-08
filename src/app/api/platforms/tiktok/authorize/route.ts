@@ -23,8 +23,20 @@ export async function GET(request: Request) {
     return NextResponse.redirect(authUrl);
   } catch (error) {
     console.error('TikTok OAuth authorize error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'OAuth認証の開始に失敗しました';
+    
+    // 環境変数が設定されていない場合のエラーメッセージ
+    if (errorMessage.includes('not configured')) {
+      return NextResponse.json(
+        { 
+          error: 'TikTok OAuth認証情報が設定されていません。環境変数TIKTOK_APP_IDとTIKTOK_APP_SECRETを設定してください。' 
+        },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: 'OAuth認証の開始に失敗しました' },
+      { error: `OAuth認証の開始に失敗しました: ${errorMessage}` },
       { status: 500 }
     );
   }

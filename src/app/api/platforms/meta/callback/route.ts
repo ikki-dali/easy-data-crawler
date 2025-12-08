@@ -89,6 +89,8 @@ export async function GET(request: Request) {
         expiresAt: Date.now() + longLivedTokens.expiresIn * 1000,
         accountId: account.accountId,
         accountName: account.name,
+        userEmail: userInfo.email,
+        userName: userInfo.name,
       });
 
       await prisma.platformAuthentication.upsert({
@@ -117,6 +119,8 @@ export async function GET(request: Request) {
       const encryptedCredentials = encryptCredentials({
         accessToken: longLivedTokens.accessToken,
         expiresAt: Date.now() + longLivedTokens.expiresIn * 1000,
+        userEmail: userInfo.email,
+        userName: userInfo.name,
       });
 
       await prisma.platformAuthentication.upsert({
@@ -140,29 +144,82 @@ export async function GET(request: Request) {
       });
     }
 
-    // ポップアップウィンドウから開かれた場合（returnToに/crawlers/newが含まれる）
-    const isPopup = returnTo.includes('/crawlers/new');
+    // ポップアップウィンドウから開かれた場合（returnToにpopup=trueが含まれる）
+    const isPopup = returnTo.includes('popup=true');
     
     if (isPopup) {
+      // returnToからpopup=trueを削除して、実際のリダイレクト先URLを取得
+      const cleanReturnTo = returnTo.replace(/[?&]popup=true/, '').replace(/popup=true[?&]/, '').replace(/popup=true$/, '');
+      
       // ポップアップウィンドウにHTMLを返して、親ウィンドウにメッセージを送る
       const html = `
         <!DOCTYPE html>
         <html>
           <head>
             <title>認証完了</title>
+            <style>
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                margin: 0;
+                background: #f5f5f5;
+              }
+              .container {
+                text-align: center;
+                padding: 2rem;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+              }
+            </style>
           </head>
           <body>
+            <div class="container">
+              <h2>認証が完了しました</h2>
+              <p>このウィンドウは自動的に閉じられます。</p>
+            </div>
             <script>
+              console.log('OAuth callback page loaded');
+              const returnTo = ${JSON.stringify(cleanReturnTo)};
+              
               // 親ウィンドウに認証完了を通知
-              if (window.opener) {
-                window.opener.postMessage({ type: 'oauth_success', platform: 'META_ADS' }, '*');
-                window.close();
+              if (window.opener && !window.opener.closed) {
+                console.log('Sending message to opener');
+                try {
+                  // 複数のoriginを試す（セキュリティ制限を回避）
+                  window.opener.postMessage({ 
+                    type: 'oauth_success', 
+                    platform: 'META_ADS',
+                    returnTo: returnTo
+                  }, window.location.origin);
+                  window.opener.postMessage({ 
+                    type: 'oauth_success', 
+                    platform: 'META_ADS',
+                    returnTo: returnTo
+                  }, '*');
+                  console.log('Message sent successfully');
+                  setTimeout(() => {
+                    window.close();
+                  }, 1000);
+                } catch (e) {
+                  console.error('Failed to send message:', e);
+                  // メッセージ送信に失敗した場合は、親ウィンドウをリダイレクト
+                  if (window.opener && !window.opener.closed) {
+                    window.opener.location.href = returnTo + (returnTo.includes('?') ? '&' : '?') + 'meta_connected=true';
+                  }
+                  setTimeout(() => {
+                    window.close();
+                  }, 1000);
+                }
               } else {
+                console.log('No opener or opener closed, redirecting');
                 // ポップアップが開かれていない場合は通常のリダイレクト
-                window.location.href = '${returnTo}?meta_connected=true';
+                window.location.href = returnTo + (returnTo.includes('?') ? '&' : '?') + 'meta_connected=true';
               }
             </script>
-            <p>認証が完了しました。このウィンドウは自動的に閉じられます。</p>
           </body>
         </html>
       `;
@@ -171,6 +228,7 @@ export async function GET(request: Request) {
       });
     }
 
+    // 通常のリダイレクト（ポップアップでない場合）
     const redirectUrl = new URL(returnTo, request.url);
     redirectUrl.searchParams.set('meta_connected', 'true');
 

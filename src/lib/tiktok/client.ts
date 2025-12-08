@@ -5,8 +5,28 @@ const TIKTOK_API_URL = 'https://business-api.tiktok.com/open_api/v1.3';
 function getTikTokCredentials() {
   const appId = process.env.TIKTOK_APP_ID;
   const appSecret = process.env.TIKTOK_APP_SECRET;
-  const redirectUri = process.env.TIKTOK_REDIRECT_URI ||
-    `${process.env.NEXTAUTH_URL}/api/platforms/tiktok/callback`;
+  
+  // リダイレクトURIを決定
+  let redirectUri = process.env.TIKTOK_REDIRECT_URI;
+  
+  if (!redirectUri) {
+    // 本番環境では環境変数を使用
+    let baseUrl = process.env.NEXTAUTH_URL;
+    
+    if (!baseUrl && process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    }
+    
+    if (!baseUrl) {
+      baseUrl = 'https://easy-data-crawler.vercel.app';
+    }
+    
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
+    }
+    
+    redirectUri = `${baseUrl}/api/platforms/tiktok/callback`;
+  }
 
   if (!appId || !appSecret) {
     throw new Error('TikTok OAuth credentials are not configured');

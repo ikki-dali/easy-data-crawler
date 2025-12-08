@@ -7,8 +7,18 @@ const SCOPES = ['ads_management', 'ads_read', 'business_management'];
 function getMetaCredentials() {
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
-  const redirectUri = process.env.META_REDIRECT_URI ||
-    `${process.env.NEXTAUTH_URL}/api/platforms/meta/callback`;
+  
+  // リダイレクトURIの決定: 環境変数 > NEXTAUTH_URL > デフォルト
+  let redirectUri = process.env.META_REDIRECT_URI;
+  
+  if (!redirectUri) {
+    // 開発環境ではlocalhostを使用
+    if (process.env.NODE_ENV === 'development' || process.env.NEXTAUTH_URL?.includes('localhost')) {
+      redirectUri = 'http://localhost:3000/api/platforms/meta/callback';
+    } else {
+      redirectUri = `${process.env.NEXTAUTH_URL}/api/platforms/meta/callback`;
+    }
+  }
 
   if (!appId || !appSecret) {
     throw new Error('Meta OAuth credentials are not configured');

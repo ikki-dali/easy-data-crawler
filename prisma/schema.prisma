@@ -22,10 +22,11 @@ model User {
   updatedAt       DateTime         @updatedAt
   
   // リレーション
-  accounts        Account[]
-  sessions        Session[]
-  platformAuths   PlatformAuthentication[]
-  crawlers        Crawler[]
+  accounts          Account[]
+  sessions          Session[]
+  platformAuths     PlatformAuthentication[]
+  crawlers          Crawler[]
+  platformSettings  PlatformSetting[]
 }
 
 enum SubscriptionType {
@@ -113,6 +114,22 @@ enum Platform {
   AMAZON_SELLER
   AD_EBIS
   GOOGLE_SHEETS
+}
+
+// プラットフォーム設定（有効/無効）
+model PlatformSetting {
+  id        String   @id @default(cuid())
+  userId    String
+  platform  Platform
+  enabled   Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, platform])
+  @@index([userId])
 }
 
 // ===== クローラー関連 =====

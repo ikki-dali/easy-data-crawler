@@ -65,6 +65,8 @@ export interface EncryptedCredentials {
   scope?: string;
   accountId?: string;
   accountName?: string;
+  userEmail?: string;
+  userName?: string;
 }
 
 export function encryptCredentials(credentials: EncryptedCredentials): string {
